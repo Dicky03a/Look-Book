@@ -12,6 +12,7 @@ async function initDb() {
   if (isInitialized || !process.env.DATABASE_URL) return;
   try {
     const sql = neon(process.env.DATABASE_URL);
+    
     await sql`
       CREATE TABLE IF NOT EXISTS activities (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -28,6 +29,7 @@ async function initDb() {
         created_at TIMESTAMP NOT NULL DEFAULT NOW()
       );
     `;
+    
     isInitialized = true;
   } catch (error) {
     console.error('Failed to initialize database:', error);
@@ -37,6 +39,7 @@ async function initDb() {
 export async function getActivities() {
   if (!process.env.DATABASE_URL) return [];
   await initDb();
+  
   try {
     return await db.select().from(activities).orderBy(desc(activities.createdAt));
   } catch (error) {
@@ -47,6 +50,7 @@ export async function getActivities() {
 
 export async function getActivity(id: string) {
   if (!process.env.DATABASE_URL) return null;
+  
   try {
     const result = await db.select().from(activities).where(eq(activities.id, id));
     return result[0] || null;
@@ -58,6 +62,7 @@ export async function getActivity(id: string) {
 
 export async function createActivity(data: any) {
   if (!process.env.DATABASE_URL) return { success: false, error: 'Database belum dikonfigurasi. Tambahkan DATABASE_URL di Secrets.' };
+  
   try {
     await db.insert(activities).values(data);
     revalidatePath('/logbook');
@@ -71,6 +76,7 @@ export async function createActivity(data: any) {
 
 export async function updateActivity(id: string, data: any) {
   if (!process.env.DATABASE_URL) return { success: false, error: 'Database belum dikonfigurasi. Tambahkan DATABASE_URL di Secrets.' };
+  
   try {
     await db.update(activities).set(data).where(eq(activities.id, id));
     revalidatePath('/logbook');
@@ -85,6 +91,7 @@ export async function updateActivity(id: string, data: any) {
 
 export async function deleteActivity(id: string) {
   if (!process.env.DATABASE_URL) return { success: false, error: 'Database belum dikonfigurasi. Tambahkan DATABASE_URL di Secrets.' };
+  
   try {
     await db.delete(activities).where(eq(activities.id, id));
     revalidatePath('/logbook');
