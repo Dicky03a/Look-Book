@@ -1,9 +1,13 @@
 'use client';
 
-import { Plus, Search, Edit2, Trash2, Eye } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Eye, FileDown, FileText } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 import { deleteActivity } from '@/app/actions';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
 
 export function LogbookClient({ initialActivities }: { initialActivities: any[] }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -22,6 +26,123 @@ export function LogbookClient({ initialActivities }: { initialActivities: any[] 
     }
   };
 
+  const handleExportExcel = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Logbook');
+
+    // Add headers
+    worksheet.columns = [
+      { header: 'Tugas', key: 'tugas', width: 30 },
+      { header: 'Prioritas', key: 'prioritas', width: 15 },
+      { header: 'Approval', key: 'approval', width: 20 },
+      { header: 'Tanggal Mulai', key: 'mulai', width: 15 },
+      { header: 'Tanggal Akhir', key: 'akhir', width: 15 },
+      { header: 'Status', key: 'status', width: 15 },
+      { header: 'Pencapaian', key: 'pencapaian', width: 30 },
+      { header: 'Catatan', key: 'catatan', width: 30 },
+      { header: 'Dokumentasi', key: 'dokumentasi', width: 25 }
+    ];
+
+    // Style headers
+    worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F46E5' } };
+    worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+
+    filteredActivities.forEach((activity, index) => {
+      const rowIndex = index + 2; // Header is row 1
+      
+      worksheet.addRow({
+        tugas: activity.tugas,
+        prioritas: activity.prioritas,
+        approval: activity.approval,
+        mulai: new Date(activity.tanggalMulai).toLocaleDateString('id-ID'),
+        akhir: new Date(activity.tanggalAkhir).toLocaleDateString('id-ID'),
+        status: activity.status,
+        pencapaian: activity.pencapaian || '-',
+        catatan: activity.catatan || '-'
+      });
+
+      // Set row height to accommodate image
+      worksheet.getRow(rowIndex).height = 80;
+      worksheet.getRow(rowIndex).alignment = { vertical: 'middle', wrapText: true };
+
+      if (activity.dokumentasi && activity.dokumentasi.startsWith('data:image')) {
+        try {
+          let extension = 'png';
+          if (activity.dokumentasi.includes('image/jpeg') || activity.dokumentasi.includes('image/jpg')) {
+            extension = 'jpeg';
+          }
+
+          const imageId = workbook.addImage({
+            base64: activity.dokumentasi,
+            extension: extension as 'png' | 'jpeg',
+          });
+
+          worksheet.addImage(imageId, {
+            tl: { col: 8, row: rowIndex - 1 }, // col 8 is 'Dokumentasi' (0-indexed)
+            ext: { width: 100, height: 100 },
+            editAs: 'oneCell'
+          });
+        } catch (e) {
+          console.error('Failed to add image to Excel', e);
+          worksheet.getCell(`I${rowIndex}`).value = 'Image Error';
+        }
+      } else if (activity.dokumentasi) {
+         worksheet.getCell(`I${rowIndex}`).value = 'File Document (Not Image)';
+      } else {
+         worksheet.getCell(`I${rowIndex}`).value = '-';
+      }
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    saveAs(new Blob([buffer]), 'Logbook_Magang.xlsx');
+  };
+
+  const handleExportPDF = () => {
+    const doc = new jsPDF('landscape');
+    
+    doc.text('Logbook Magang', 14, 15);
+    
+    const tableData = filteredActivities.map(activity => [
+      activity.tugas,
+      activity.prioritas,
+      activity.approval,
+      new Date(activity.tanggalMulai).toLocaleDateString('id-ID'),
+      new Date(activity.tanggalAkhir).toLocaleDateString('id-ID'),
+      activity.status,
+      activity.pencapaian || '-',
+      activity.dokumentasi && activity.dokumentasi.startsWith('data:image') ? '' : (activity.dokumentasi ? 'Doc' : '-')
+    ]);
+
+    autoTable(doc, {
+      head: [['Tugas', 'Prioritas', 'Approval', 'Mulai', 'Akhir', 'Status', 'Pencapaian', 'Dokumentasi']],
+      body: tableData,
+      startY: 20,
+      styles: { fontSize: 8, minCellHeight: 25, valign: 'middle' },
+      headStyles: { fillColor: [79, 70, 229] }, // indigo-600
+      columnStyles: {
+        7: { cellWidth: 30, halign: 'center' } // Dokumentasi column
+      },
+      didDrawCell: (data) => {
+        if (data.column.index === 7 && data.cell.section === 'body') {
+          const activity = filteredActivities[data.row.index];
+          if (activity.dokumentasi && activity.dokumentasi.startsWith('data:image')) {
+            const dim = 20; // 20x20 mm
+            const x = data.cell.x + (data.cell.width - dim) / 2;
+            const y = data.cell.y + (data.cell.height - dim) / 2;
+            try {
+              doc.addImage(activity.dokumentasi, x, y, dim, dim);
+            } catch(e) {
+              console.error("Failed to add image to PDF", e);
+            }
+          }
+        }
+      }
+    });
+
+    doc.save('Logbook_Magang.pdf');
+  };
+
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-8">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -29,13 +150,29 @@ export function LogbookClient({ initialActivities }: { initialActivities: any[] 
           <h1 className="text-2xl font-bold text-gray-900">Look Book Magang</h1>
           <p className="text-gray-500 mt-1">Catat dan kelola aktivitas harian magang Anda.</p>
         </div>
-        <Link 
-          href="/logbook/new"
-          className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium"
-        >
-          <Plus className="w-5 h-5" />
-          Tambah Aktivitas
-        </Link>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={handleExportExcel}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
+          >
+            <FileDown className="w-5 h-5" />
+            Export Excel
+          </button>
+          <button
+            onClick={handleExportPDF}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-rose-600 text-white rounded-lg hover:bg-rose-700 transition-colors font-medium"
+          >
+            <FileText className="w-5 h-5" />
+            Export PDF
+          </button>
+          <Link 
+            href="/logbook/new"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium"
+          >
+            <Plus className="w-5 h-5" />
+            Tambah Aktivitas
+          </Link>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
